@@ -1,0 +1,601 @@
+import pandas as pd
+import multiprocessing as mp
+import os 
+
+def mult_types(modification, positions):
+    cys_ids = []
+    positions = positions.split(';')
+    modification = modification.split(']')[1]
+    modification = modification.split('[')[1]
+    modification = modification.split('C')[1]
+    modification = modification.strip()
+    mod = int(modification)
+    
+    for position in positions:
+        position = position.strip()
+        accession = position.split(' ')[0]
+        position = position.split(' ')[1]
+        position = position.strip('[]')
+        first_position = position.split('-')[0]
+        pos = int(first_position)
+        cys_loc = pos + mod - 1
+        cys_id = accession + '_C' + str(cys_loc)
+        cys_ids.append(cys_id)
+        
+    return cys_ids
+   
+def cys_1(modification, positions):
+    """
+    Function to handle the case where there is only one cysteine residue
+    """
+    cys_ids = []
+    positions = positions.split(';')
+    modification = modification.split('[')[1]
+    modification = modification.split(']')[0]
+    modification = modification.split('C')[1]
+    modification = modification.strip()
+    if modification == '':
+        return None
+    mod = int(modification)
+    
+    for position in positions:
+        position = position.strip()
+        accession = position.split(' ')[0]
+        position = position.split(' ')[1]
+        position = position.strip('[]')
+        first_position = position.split('-')[0]
+        pos = int(first_position)
+        cys_loc = pos + mod - 1
+        cys_id = accession + '_C' + str(cys_loc)
+        cys_ids.append(cys_id)
+        
+    return cys_ids
+       
+def cys_multiple(modification, positions):
+    cys_ids = []
+    mods = modification.split('[')[1]
+    mods = mods.split(']')[0]
+    mods = mods.split('; ')
+    positions = positions.split(';')
+    for mod in mods:
+        mod = mod.split('C')[1]
+        mod = mod.strip()
+        mod = int(mod)
+        for position in positions:
+
+            position = position.strip()
+            accession = position.split(' ')[0]
+            position = position.split(' ')[1]
+            position = position.strip('[]')
+            first_position = position.split('-')[0]
+            pos = int(first_position)
+            cys_loc = pos + mod - 1
+            cys_id = accession + '_C' + str(cys_loc)
+            cys_ids.append(cys_id)
+            
+    return cys_ids
+
+def make_cysteine_list(df):
+    """
+    Make a list of cysteine residues from the dataframe
+    """
+    cys_list = []
+    for i in range(len(df)):
+        modification = df['Modifications'][i]
+        type_mod = modification.split('];')
+        positions = df['Positions in Master Proteins'][i]
+        if len(type_mod) > 1:
+            cys_ids = mult_types(modification, positions)
+            for i in cys_ids:
+                cys_list.append(i)
+            continue 
+        number_mods = modification.split('x')[0]
+        number_mods = int(number_mods)
+        if number_mods == 1:
+            cys_ids = cys_1(modification, positions)
+        elif number_mods > 1:
+            cys_ids = cys_multiple(modification, positions)
+            
+        if cys_ids == None:
+            continue
+        for i in cys_ids:
+            cys_list.append(i)
+            
+            
+    return cys_list
+        
+def ligandable(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Ligandable data set.xlsx'
+    df = pd.read_excel(path) 
+    lig_file = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/ligandability.txt'
+    f = open(lig_file, 'a')
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        dfnew = df[df['cysteineid'] == cys]
+        if dfnew.empty:
+                l_ligandable = 'Cys Not in CysDB'
+        else:
+                dfnew.fillna('no', inplace = True)
+                l_ligandable = dfnew['ligandable'].tolist()
+                l_ligandable = l_ligandable[0]
+                
+        f.write(cys + '\t' + str(l_ligandable) + '\n')  
+            
+def binding_site_annotated(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Binding site cys, and hyperreactive cys.xlsx'
+    bind_ann = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/binding_site_annotated.txt'
+    f = open(bind_ann, 'a')
+    df = pd.read_excel(path)
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        df2 = df[df['cysteineid'] == cys]
+        if df2.empty:
+            l_annotated = 'Cys Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_annotated = df2['is_annotated_binding_site'].tolist()
+            l_annotated = l_annotated[0]
+        f.write(cys + '\t' + str(l_annotated) + '\n')
+               
+def in_binding_site_near(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Binding site cys, and hyperreactive cys.xlsx'
+    bind_near = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/binding_site_near.txt'
+    f = open(bind_near, 'a')
+    df = pd.read_excel(path)
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        df2 = df[df['cysteineid'] == cys]
+        if df2.empty:
+            l_near = 'Cys Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_near = df2['in_or_near_annotated_binding_site_in_1D_sequence'].tolist()
+            l_near = l_near[0]
+            
+        f.write(cys + '\t' + str(l_near) + '\n')     
+        
+def active_site_annotated(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Active site cys.xlsx'
+    df = pd.read_excel(path)
+    act_ann = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/active_site_annotated.txt'
+    f = open(act_ann, 'a')
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        df2 = df[df['cysteineid'] == cys]
+        if df2.empty:
+            l_annotated = 'Cys Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_annotated = df2['is_annotated_active_site'].tolist()
+            l_annotated = l_annotated[0]
+            
+        f.write(cys + '\t' + str(l_annotated) + '\n')
+
+def in_active_site_near(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Active site cys.xlsx'
+    df = pd.read_excel(path)
+    act_near = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/active_site_near.txt'
+    f = open(act_near, 'a')
+    for i in range(len(cys_list)):
+
+        cys = cys_list[i]
+        df2 = df[df['cysteineid'] == cys]
+        if df2.empty:
+            l_near = 'Cys Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_near = df2['in_or_near_annotated_active_site_in_1D_sequence'].tolist()
+            l_near = l_near[0]    
+        f.write(cys + '\t' + str(l_near) + '\n')
+      
+def is_hyperactive(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Binding site cys, and hyperreactive cys.xlsx'
+    df = pd.read_excel(path)
+    hyper = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/hyperactive.txt'
+    f = open(hyper, 'a')
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        df2 = df[df['cysteineid'] == cys]
+        if df2.empty:
+            l_hyperreactive = 'Cys Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_hyperreactive = df2['hyperreactive'].tolist()
+            l_hyperreactive = l_hyperreactive[0]
+            
+        f.write(cys + '\t' + str(l_hyperreactive) + '\n')
+
+def is_catalytic(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Catalytic, disulfide, redox.xlsx'
+    df = pd.read_excel(path)
+    catalytic = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/catalytic.txt'
+    f = open(catalytic, 'a')
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        protein = cys.split('_')[0]
+        df2 = df[df['proteinid'] == protein]
+        if df2.empty:
+            l_catalytic = 'Accession Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_catalytic = df2['catalytic_activity'].tolist()
+            l_catalytic = l_catalytic[0]
+        f.write(cys + '\t' + str(l_catalytic) + '\n')
+
+def is_disulfide(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Catalytic, disulfide, redox.xlsx'
+    df = pd.read_excel(path)
+    disulfide = '/Users/sgilpatrick13/Science/CysDB Comparison/'+ str(folder_name) + '/disulfide.txt'
+    f = open(disulfide, 'a')
+    for i in range(len(cys_list)):
+
+        cys = cys_list[i]
+        protein = cys.split('_')[0]
+        df2 = df[df['proteinid'] == protein]
+        if df2.empty:
+            l_disulfide = 'Accession Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_disulfide = df2['disulfide'].tolist()
+            l_disulfide = l_disulfide[0]
+            
+        f.write(cys + '\t' + str(l_disulfide) + '\n')
+   
+def redox_activity(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Catalytic, disulfide, redox.xlsx'
+    df = pd.read_excel(path)
+    redox = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/redox.txt'
+    f = open(redox, 'a')
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        protein = cys.split('_')[0]
+        df2 = df[df['proteinid'] == protein]
+        if df2.empty:
+            l_redox = 'Accession Not In CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_redox = df2['redox'].tolist()
+            l_redox = l_redox[0]
+            
+        f.write(cys + '\t' + str(l_redox) + '\n')
+    
+def is_fda_approved(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/FDA, ChemBL, Drugbank.xlsx'
+    df = pd.read_excel(path)
+    fda = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/fda.txt'
+    f = open(fda, 'a')
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        accession = cys.split('_')[0]
+        df2 = df.loc[df['proteinid'] == accession]
+        if df2.empty:
+            l_fda = 'Accession Not In CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_fda = df2['FDA'].tolist()
+            l_fda = l_fda[0]
+            
+            
+        f.write(cys + '\t' + str(l_fda) + '\n')
+        
+def in_chembl(cys_list, folder_name):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/FDA, ChemBL, Drugbank.xlsx'
+    df = pd.read_excel(path)
+    ChEMBL = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/ChEMBL.txt'
+    f = open(ChEMBL, 'a')
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        protein = cys.split('_')[0]
+        df2 = df[df['proteinid'] == protein]
+        if df2.empty:
+            l_chembl = 'Accession Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_chembl = df2['ChEMBL'].tolist()
+            l_chembl = l_chembl[0]
+            
+        f.write(cys + '\t' + str(l_chembl) + '\n')
+        
+def in_drugbank(cys_list, folder_name):
+    
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/FDA, ChemBL, Drugbank.xlsx'
+    df = pd.read_excel(path)
+    drugbank = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/drugbank.txt'
+    f = open(file = drugbank, mode = 'a')
+    for i in range(len(cys_list)):
+        cys = cys_list[i]
+        protein = cys.split('_')[0]
+        df2 = df[df['proteinid'] == protein]
+        if df2.empty:
+            l_drugbank = 'Accession Not in CysDB'
+        else:
+            df2.fillna('no', inplace = True)
+            l_drugbank = df2['DrugBank'].tolist()
+            l_drugbank = l_drugbank[0]
+            
+        f.write(cys + '\t' + str(l_drugbank) + '\n')
+
+def compare_cysDB(cys_list, path):
+    folder_name = path.split('/')[-1]
+    folder_name = folder_name.split('.')[0]
+    os.mkdir('/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name))
+    p1 = mp.Process(target=ligandable, args=(cys_list, folder_name, ))
+    p2 = mp.Process(target=binding_site_annotated, args=(cys_list, folder_name, ))
+    p3 = mp.Process(target=in_binding_site_near, args=(cys_list, folder_name, ))
+    p4 = mp.Process(target=active_site_annotated, args=(cys_list, folder_name, ))
+    p5 = mp.Process(target=in_active_site_near, args=(cys_list, folder_name, ))
+    p6 = mp.Process(target=is_hyperactive, args=(cys_list, folder_name, ))
+    p7 = mp.Process(target=is_catalytic, args=(cys_list, folder_name, ))
+    p8 = mp.Process(target=is_disulfide, args=(cys_list, folder_name, ))
+    p9 = mp.Process(target=redox_activity, args=(cys_list, folder_name, ))
+    p10 = mp.Process(target=is_fda_approved, args=(cys_list, folder_name, ))
+    p11 = mp.Process(target=in_chembl, args=(cys_list, folder_name, ))
+    p12 = mp.Process(target=in_drugbank, args=(cys_list, folder_name, ))
+    
+    p1.start()
+    p2.start()
+    p3.start()
+    p4.start()
+    p5.start()
+    p6.start()
+    p7.start()
+    p8.start()
+    p9.start()
+    p10.start()
+    p11.start()
+    p12.start()
+    
+    p1.join()
+    p2.join()
+    p3.join()
+    p4.join()
+    p5.join()
+    p6.join()
+    p7.join()
+    p8.join()
+    p9.join()
+    p10.join()
+    p11.join()
+    p12.join()
+    return folder_name
+
+def write_others(folder_name, df):
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name) + '/others.txt'
+    f = open(path, 'a')
+    f.write('Accession' + '\t' +
+            'Annotated Sequence' + '\t' +
+                'Modifications' + '\t' +
+                '#PSMs' + '\t' +
+                'Master Protein Accessions' + '\t' +
+                'Positions in Master Proteins' + '\t' +
+                'Master Protein Descriptions' + '\t' +
+                'Abundance 1' + '\t' +
+                'Abundance 2' + '\t' +
+                'Average Abundance' + '\n')
+    for i in range(len(df)):
+        master_protein = df['Master Protein Accessions'][i]
+        master_protein = master_protein.split(';') 
+        for n in master_protein:
+            n = str(n)
+            n = n.strip()
+            annotated_sequence = df['Annotated Sequence'][i]
+            annotated_sequence = annotated_sequence.strip()
+            modifications = df['Modifications'][i]
+            modifications = modifications.strip()
+            PSMs = df['# PSMs'][i]
+            PSMs = str(PSMs)
+            PSMs = PSMs.strip()
+            master_protein = df['Master Protein Accessions'][i]
+            master_protein = master_protein.strip()
+            positions = df['Positions in Master Proteins'][i]
+            positions = positions.strip()
+            master_protein_descriptions = df['Master Protein Descriptions'][i]
+            master_protein_descriptions = master_protein_descriptions.replace('\n', ',')
+            master_protein_descriptions = master_protein_descriptions.strip()
+            abundance_1 = df['Abundance 1'][i]
+            abundance_2 = df['Abundance 2'][i]
+            avg_abundance = float(abundance_1) + float(abundance_2) / 2
+            abundance_1 = str(abundance_1)
+            abundance_1 = abundance_1.strip()
+            abundance_2 = str(abundance_2)
+            abundance_2 = abundance_2.strip()
+            avg_abundance = str(avg_abundance)
+            avg_abundance = avg_abundance.strip()
+
+            f.write(str(n) + '\t' + str(annotated_sequence) + '\t' + 
+                    str(modifications) + '\t' + 
+                    str(PSMs) + '\t' + 
+                    str(master_protein) + '\t' + 
+                    str(positions) + '\t' + 
+                    str(master_protein_descriptions) + '\t' + 
+                    str(abundance_1) + '\t' + 
+                    str(abundance_2) + '\t' + 
+                    str(avg_abundance) + '\n')
+                                   
+def write_new_spreadsheet(cys_list, folder_name, df):        
+    data_path = '/Users/sgilpatrick13/Science/CysDB Comparison/' + str(folder_name)
+    new_file = data_path + '/CysDB_Comparison.txt'      
+    f = open(new_file, 'a')
+    f.write('Accession' + '\t' + 
+            'Cysteine ID' + '\t' + 
+            'Ligandable' + '\t' + 
+            'Binding Site Annotated' + '\t' + 
+            'In Binding Site Near' + '\t' + 
+            'Active Site Annotated' + '\t' + 
+            'In Active Site Near' + '\t' + 
+            'Hyperactive' + '\t' + 
+            'Catalytic' + '\t' + 
+            'Disulfide' + '\t' + 
+            'Redox' + '\t' + 
+            'FDA Approved' + '\t' + 
+            'ChEMBL' + '\t' + 
+            'DrugBank' + '\t' +
+            'Annotated Sequence' + '\t' +
+            'Modifications' + '\t' +
+            '#PSMs' + '\t' +
+            'Master Protein Accessions' + '\t' +
+            'Positions in Master Proteins' + '\t' +
+            'Master Protein Descriptions' + '\t' +
+            'Abundance 1' + '\t' +
+            'Abundance 2' + '\t' +
+            'Average Abundance' + '\n')
+    file_names = ['ligandability.txt', 'binding_site_annotated.txt', 'binding_site_near.txt', 'active_site_annotated.txt', 'active_site_near.txt', 'hyperactive.txt', 'catalytic.txt', 'disulfide.txt', 'redox.txt', 'fda.txt', 'ChEMBL.txt', 'drugbank.txt']
+    
+    for i in range(len(cys_list)):
+        accession = cys_list[i].split('_')[0]
+        cys_number = cys_list[i].split('_')[1]
+        cys_number = cys_number.split('C')[1]
+        accession = accession.strip()
+        cys = cys_list[i]
+        cys = cys.strip()
+        for name in file_names:
+            with open(data_path + '/' + name) as f1:
+                for line in f1:
+                    if cys in line:
+                        if name == 'ligandability.txt':
+                            ligandable = line.split('\t')[1]
+                            ligandable = ligandable.strip()
+                        elif name == 'binding_site_annotated.txt':
+                            binding_site_annotated = line.split('\t')[1]
+                            binding_site_annotated = binding_site_annotated.strip()
+                        elif name == 'binding_site_near.txt':
+                            binding_site_near = line.split('\t')[1]
+                            binding_site_near = binding_site_near.strip()
+                        elif name == 'active_site_annotated.txt':
+                            active_site_annotated = line.split('\t')[1]
+                            active_site_annotated = active_site_annotated.strip()
+                        elif name == 'active_site_near.txt':
+                            active_site_near = line.split('\t')[1]
+                            active_site_near = active_site_near.strip()
+                        elif name == 'hyperactive.txt':
+                            hyperactive = line.split('\t')[1]
+                            hyperactive = hyperactive.strip()
+                        elif name == 'catalytic.txt':
+                            catalytic = line.split('\t')[1]
+                            catalytic = catalytic.strip()
+                        elif name == 'disulfide.txt':
+                            disulfide = line.split('\t')[1]
+                            disulfide = disulfide.strip()
+                        elif name == 'redox.txt':
+                            redox = line.split('\t')[1]
+                            redox = redox.strip()
+                        elif name == 'fda.txt':
+                            fda = line.split('\t')[1]
+                            fda = fda.strip()
+                        elif name == 'ChEMBL.txt':
+                            ChEMBL = line.split('\t')[1]
+                            ChEMBL = ChEMBL.strip()
+                        elif name == 'drugbank.txt':
+                            drugbank = line.split('\t')[1]
+                            drugbank = drugbank.strip()
+        with open(data_path + '/others.txt') as f2:
+            for line in f2:
+                line = line.split('\t')
+                try: 
+                    accessionOthers = line[0]
+                    annotated_sequencePre = line[1]
+                    modificationsPrw = line[2]
+                    psmsPre = line[3]
+                    master_proteinPre = line[4]
+                    positionsPre = line[5]
+                    master_protein_descriptionsPre = line[6]
+                    abundance_1Pre = line[7]
+                    abundance_2Pre = line[8]
+                    avg_abundancePre = line[9]
+                except IndexError:
+                    continue
+                
+                if accession == accessionOthers:
+                    p1 = positionsPre.split('-')[0]
+                    p1 = p1.split('[')[1]
+                    p1 = p1.strip()
+                    p1 = int(p1)
+                    p2 = positionsPre.split('-')[1]
+                    p2 = p2.split(']')[0]
+                    p2 = p2.strip()
+                    p2 = int(p2)
+                    if int(cys_number) >= p1 and int(cys_number) <= p2:
+                        annotated_sequence = annotated_sequencePre
+                        annotated_sequence = annotated_sequence.strip()
+                        modifications = modificationsPrw
+                        modifications = modifications.strip()
+                        PSMs = psmsPre
+                        PSMs = PSMs.strip()
+                        master_protein = master_proteinPre
+                        master_protein = master_protein.strip()
+                        positions = positionsPre
+                        positions = positions.strip()
+                        master_protein_descriptions = master_protein_descriptionsPre
+                        master_protein_descriptions = master_protein_descriptions.strip()
+                        abundance_1 = abundance_1Pre
+                        abundance_1 = abundance_1.strip()
+                        abundance_2 = abundance_2Pre
+                        abundance_2 = abundance_2.strip()
+                        avg_abundance = avg_abundancePre
+                        avg_abundance = avg_abundance.strip()
+                        break
+                    else:
+                        continue
+
+        try:
+            f.write(str(accession) + '\t' +
+                str(cys) + '\t' +
+                str(ligandable) + '\t' +
+                str(binding_site_annotated) + '\t' +
+                str(binding_site_near) + '\t' +
+                str(active_site_annotated) + '\t' +
+                str(active_site_near) + '\t' +
+                str(hyperactive) + '\t' +
+                str(catalytic) + '\t' +
+                str(disulfide) + '\t' +
+                str(redox) + '\t' +
+                str(fda) + '\t' +
+                str(ChEMBL) + '\t' +
+                str(drugbank) + '\t' +
+                str(annotated_sequence) + '\t' +
+                str(modifications) + '\t' +
+                str(PSMs) + '\t' +
+                str(master_protein) + '\t' +
+                str(positions) + '\t' +
+                str(master_protein_descriptions) + '\t' +
+                str(abundance_1) + '\t' +
+                str(abundance_2) + '\t' +
+                str(avg_abundance) + '\n')
+        except UnboundLocalError:
+            f.write(str(accession) + '\t' +
+                str(cys) + '\t' +
+                str(ligandable) + '\t' +
+                str(binding_site_annotated) + '\t' +
+                str(binding_site_near) + '\t' +
+                str(active_site_annotated) + '\t' +
+                str(active_site_near) + '\t' +
+                str(hyperactive) + '\t' +
+                str(catalytic) + '\t' +
+                str(disulfide) + '\t' +
+                str(redox) + '\t' +
+                str(fda) + '\t' +
+                str(ChEMBL) + '\t' +
+                str(drugbank) + '\t' +
+                str(annotated_sequence) + '\t' +
+                str(modifications) + '\t' +
+                str(PSMs) + '\t' +
+                str(master_protein) + '\t' +
+                str(positions) + '\t' +
+                str(master_protein_descriptions) + '\t' +
+                '0' + '\t' +
+                '0' + '\t' +
+                '0' + '\n')
+            continue
+        
+def main():
+    os.chdir('/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling')
+    #path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Alkyne modification.xlsx'
+    path = '/Users/sgilpatrick13/Science/CysDB Comparison/Proteomics Data - Global cys profiling/Alkyne-azide_triazole modification.xlsx'
+    df = pd.read_excel(path)
+    cys_list = make_cysteine_list(df)
+    folder_name = compare_cysDB(cys_list, path)
+    write_others(folder_name, df)
+    write_new_spreadsheet(cys_list, folder_name, df)
+       
+if __name__ == '__main__':
+    main()
